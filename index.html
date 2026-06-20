@@ -6051,18 +6051,7 @@ function checkForUpdates(){
     }
   });
 })();
-// Escuta mensagem do SW para recarregar - com proteção anti-loop
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.addEventListener('message', e => {
-    if(e.data && e.data.type === 'SW_RELOAD'){
-      // Só recarrega uma vez por sessão
-      if(!sessionStorage.getItem('sw_reloaded')){
-        sessionStorage.setItem('sw_reloaded','1');
-        window.location.reload();
-      }
-    }
-  });
-}
+
 
 // Touch handled by #app overflow scroll
 
