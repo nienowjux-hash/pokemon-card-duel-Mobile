@@ -1,31 +1,23 @@
-// pkm-duel-v41
+// pkm-duel-v41 - SIMPLES E SEM LOOP
 const CACHE = 'pkm-duel-v41';
 const FILES = ['./', './index.html', './manifest.json'];
 
+// Instala e ativa sem reload forçado
 self.addEventListener('install', e => {
   self.skipWaiting();
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES).catch(()=>{})));
 });
 
+// Limpa caches velhos, assume controle - SEM mandar mensagem de reload
 self.addEventListener('activate', e => {
   e.waitUntil(
-    caches.keys().then(keys => {
-      const oldKeys = keys.filter(k => k !== CACHE);
-      const hasOldCache = oldKeys.length > 0;
-      return Promise.all(oldKeys.map(k => caches.delete(k)))
-        .then(() => self.clients.claim())
-        .then(() => {
-          // Só manda reload se tinha cache antigo (= update real, não primeira instalação)
-          if(hasOldCache){
-            return self.clients.matchAll({includeUncontrolled:true, type:'window'})
-              .then(clients => clients.forEach(c => c.postMessage({type:'SW_RELOAD'})));
-          }
-        });
-    })
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
-// Network first
+// Network first - sempre tenta buscar da rede
 self.addEventListener('fetch', e => {
   if(e.request.method !== 'GET') return;
   e.respondWith(
