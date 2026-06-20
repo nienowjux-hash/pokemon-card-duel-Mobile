@@ -1648,19 +1648,21 @@ function showToast(msg,ms=2000){
 
 let G={};
 const TOURNEYS=[
-  {id:'starter',  name:'Liga Iniciante',    battles:4,  diff:1, prizeN:3, prizeRarity:0, prize:'3 Pokémon Comuns'},
-  {id:'medium',   name:'Liga Intermediária', battles:5,  diff:2, prizeN:5, prizeRarity:1, prize:'5 Pokémon Raros'},
-  {id:'elite',    name:'Liga Elite',         battles:8,  diff:3, prizeN:3, prizeRarity:2, prize:'3 Pokémon Épicos'},
-  {id:'champion', name:'Campeonato',         battles:10, diff:4, prizeN:3, prizeRarity:3, prize:'3 Pokémon Lendários'},
-  {id:'boss',     name:'⚫ MADARA',           battles:1,  diff:5, prizeN:5, prizeRarity:3, prize:'5 Pokémon Lendários', boss:true},
+  {id:'starter',  name:'Liga Iniciante',       battles:4,  diff:1, prizeN:3, prizeRarity:0, prize:'3 Pokémon Comuns'},
+  {id:'medium',   name:'Liga Intermediária',   battles:5,  diff:2, prizeN:5, prizeRarity:1, prize:'5 Pokémon Raros'},
+  {id:'elite',    name:'Liga Elite',            battles:8,  diff:3, prizeN:3, prizeRarity:2, prize:'3 Pokémon Épicos'},
+  {id:'champion', name:'Campeonato',            battles:10, diff:4, prizeN:3, prizeRarity:3, prize:'3 Pokémon Lendários'},
+  {id:'boss',     name:'⚫ MADARA',              battles:1,  diff:5, prizeN:5, prizeRarity:3, prize:'5 Pokémon Lendários', boss:true},
+  {id:'legendary',name:'🌟 Campeonato Lendário', battles:20, diff:6, prizeN:5, prizeRarity:3, prize:'5 Lendários + Modo Shiny', legendary:true, locked:true},
 ];
-const DIFF_NAMES=['','Fácil','Médio','Difícil','Mestre','MADARA'];
+const DIFF_NAMES=['','Fácil','Médio','Difícil','Mestre','MADARA','Lendário'];
 const POOL_BY_DIFF={
   1:['charmander','squirtle','bulbasaur','pikachu','eevee','oddish','bellsprout','ekans','geodude','dratini','gastly','abra','ponyta','magikarp','voltorb'],
   2:['charmeleon','wartortle','ivysaur','raichu','arcanine','vileplume','kadabra','graveler','dragonair','haunter','jolteon','vaporeon','flareon','starmie','electabuzz','magmar','growlithe','vulpix'],
   3:['charizard','blastoise','venusaur','alakazam','gengar','snorlax','gyarados','lapras','golem','aerodactyl','machamp','slowbro','golduck','magneton','electabuzz','weezing','arbok'],
   4:['mewtwo','dragonite','alakazam','gengar','snorlax','gyarados','lapras','machamp','arcanine','zapdos','moltres','articuno','espeon','umbreon','typhlosion','feraligatr'],
-  5:['mewtwo','mewtwo','mew','dragonite','dragonite','zapdos','moltres','articuno','lugia','ho_oh','alakazam','snorlax','gyarados']
+  5:['mewtwo','mewtwo','mew','dragonite','dragonite','zapdos','moltres','articuno','lugia','ho_oh','alakazam','snorlax','gyarados'],
+  6:['mewtwo','mewtwo','mew','mew','lugia','lugia','ho_oh','ho_oh','zapdos','zapdos','moltres','moltres','articuno','articuno','dragonite','dragonite','alakazam','gengar','snorlax','gyarados']
 };
 
 function buildAIDeck(diff){
@@ -1706,9 +1708,9 @@ function initG(opts={}){
   G={
     mode,diff,phase:'player',
     pHP:mode==='lightning'?2000:4000,
-    eHP:opts.boss?12000:(mode==='lightning'?2000:4000),
+    eHP:opts.legendary&&opts.finalBoss?15000:opts.boss?12000:(mode==='lightning'?2000:4000),
     maxPHP:mode==='lightning'?2000:4000,
-    maxEHP:opts.boss?12000:(mode==='lightning'?2000:4000),
+    maxEHP:opts.legendary&&opts.finalBoss?15000:opts.boss?12000:(mode==='lightning'?2000:4000),
     pHand:[],eHand:[],
     pField:[null,null,null],
     eField:[null,null,null],
@@ -2354,18 +2356,27 @@ function grantPrize(tourneyId){
     pool.push(...DB.filter(c=>!c.spell).map(c=>c.id));
   }
 
-  // Give n random cards from pool (can be duplicates!)
+  // Give n cards - for legendary tourney, prioritize unowned first
   const n=t.prizeN||3;
   const prizes=[];
+  const unowned=pool.filter(id=>!sv.unlocked.includes(id));
+  const priorityPool=t.legendary&&unowned.length>0?[...unowned,...unowned,...pool]:pool;
   for(let i=0;i<n;i++){
-    const pick=pool[Math.floor(Math.random()*pool.length)];
+    const pick=priorityPool[Math.floor(Math.random()*priorityPool.length)];
     prizes.push(pick);
-    // Unlock if not owned, else add to copies
     if(!sv.unlocked.includes(pick)){
       sv.unlocked.push(pick);
     } else {
       sv.copies[pick]=(sv.copies[pick]||0)+1;
     }
+  }
+  // Legendary championship: unlock all Shiny + 5 legendaries
+  if(t.legendary){
+    if(!sv.shinies)sv.shinies=[];
+    DB.filter(c=>!c.spell&&(c.r||0)>=3).forEach(b=>{
+      if(!sv.shinies.includes(b.id))sv.shinies.push(b.id);
+    });
+    showToast('✨ MODO SHINY DESBLOQUEADO! Todos os Lendários brilham!',5000);
   }
   saveData(sv);
   _lastPrizes=[...prizes];
@@ -2810,16 +2821,27 @@ function renderTourney(app){
     </div>
     ${TOURNEYS.map(t=>{
       const done=sv.beaten&&sv.beaten.includes(t.id);
+          // Legendary requires all others beaten
+          const allBeaten=['starter','medium','elite','champion','boss'].every(id=>sv.beaten&&sv.beaten.includes(id));
+          const locked=t.locked&&!allBeaten;
       const col=TCOLS[t.id]||'#aaa';
-      return `<div style="background:#0a0a1a;border:2px solid ${col}${done?'':'44'};border-radius:10px;padding:12px 14px;margin-bottom:9px;display:flex;align-items:center;gap:10px">
+      return `<div style="background:${locked?'#050508':'#0a0a1a'};border:2px solid ${locked?'#222':col+( done?'':'44')};border-radius:10px;padding:12px 14px;margin-bottom:9px;display:flex;align-items:center;gap:10px">
         <div style="flex:1;min-width:0">
           <div style="margin-bottom:5px">
-            <span style="background:${col}25;color:${col};border:1.5px solid ${col};border-radius:6px;padding:3px 8px;font-weight:bold;font-size:.72em;word-break:break-word;display:block;text-align:center">${done?'✅ ':''}${t.name}${t.boss?' 👑':''}</span>
+            <span style="background:${col}25;color:${locked?'#444':col};border:1.5px solid ${locked?'#333':col};border-radius:6px;padding:3px 8px;font-weight:bold;font-size:.72em;word-break:break-word;display:block;text-align:center">${done?'✅ ':locked?'🔒 ':''}${t.name}${t.boss?' 👑':''}</span>
           </div>
           <div style="font-size:.65em;color:#999;margin-top:3px">⚔️ ${t.battles} batalha${t.battles>1?'s':''} · ${DIFF_NAMES[t.diff]}</div>
           <div style="font-size:.62em;color:#bbb;margin-top:2px">🎁 ${t.prize}</div>
         </div>
-        <button onclick="startTourney('${t.id}')" style="flex-shrink:0;padding:9px 16px;background:${col};color:#000;border:none;border-radius:8px;font-weight:bold;font-size:.82em;cursor:pointer;min-width:60px">${done?'Rejog.':'Jogar'}</button>
+        <button ${locked?'disabled':''} onclick="${locked?'void(0)':'startTourney(\''+t.id+'\''+')'}"
+          style="flex-shrink:0;padding:9px 16px;
+          background:${locked?'#1a1a1a':col};
+          color:${locked?'#444':'#000'};
+          border:1px solid ${locked?'#333':col};
+          border-radius:8px;font-weight:bold;font-size:.82em;
+          cursor:${locked?'not-allowed':'pointer'};
+          min-width:60px;opacity:${locked?'.6':'1'}">
+          ${locked?'🔒 Bloqueado':done?'Rejog.':'Jogar'}</button>
       </div>`;
     }).join('')}
   </div>`;
@@ -4198,14 +4220,14 @@ function renderDraft(app){
     <div style="color:#f0c040;font-size:1.1em;font-weight:bold;margin-bottom:6px">🎲 Modo Draft</div>
     <div style="color:#aaa;font-size:.85em;margin-bottom:4px">Escolha ${5-_draftRound} card(s) ainda</div>
     <div style="color:#888;font-size:.75em;margin-bottom:16px">Picks: ${_draftPicks.map(id=>byId(id)?.name||id).join(', ')||'nenhum'}</div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px">
       ${_draftChoices.map((b,i)=>{
         const tc=typeColor(b.type);
-        return `<div onclick="pickDraftCard(${i})" style="background:#0a0a1a;border:2px solid ${tc};border-radius:10px;padding:12px;cursor:pointer;transition:transform .15s" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform=''">
-          <canvas width=32 height=32 id="dr_${i}" style="image-rendering:pixelated"></canvas>
-          <div style="font-size:.75em;color:${tc};font-weight:bold;margin-top:4px">${b.name}</div>
-          <div style="font-size:.65em;color:#888">${(TINFO[b.type]||{e:'?'}).e} ${b.type}</div>
-          <div style="font-size:.65em;color:#bbb">⚔️${b.atk} 🛡️${b.def}</div>
+        return `<div onclick="pickDraftCard(${i})" style="background:linear-gradient(160deg,${tc}22 0%,#0a0a1a 60%);border:2px solid ${tc};border-radius:10px;padding:8px 4px;cursor:pointer;text-align:center;transition:transform .15s;overflow:hidden" onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform=''">
+          ${getSpriteUrl(b.id)?`<img src="${getSpriteUrl(b.id)}" style="width:52px;height:52px;image-rendering:pixelated;object-fit:contain">`:`<canvas width=32 height=32 id="dr_${i}" style="image-rendering:pixelated;width:40px;height:40px"></canvas>`}
+          <div style="font-size:.62em;color:${tc};font-weight:bold;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 2px">${b.name}</div>
+          <div style="font-size:.55em;color:#888">${(TINFO[b.type]||{e:'?'}).e} ${b.type}</div>
+          <div style="font-size:.58em;color:#bbb">⚔️${b.atk} 🛡️${b.def}</div>
           <div style="font-size:.6em;color:#888;margin-top:2px">${PASSIVES[b.id]?'⚡ '+PASSIVES[b.id].name:''}</div>
         </div>`;
       }).join('')}
