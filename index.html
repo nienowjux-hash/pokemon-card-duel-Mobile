@@ -4243,46 +4243,15 @@ let _updateAvailable = false;
 
 function checkVersionOnLoad() {
   localStorage.setItem('pkm_game_version', GAME_VERSION);
-
   if (!('serviceWorker' in navigator)) return;
-
-  // Register SW and handle auto-update
-  navigator.serviceWorker.register('./service-worker.js').then(reg => {
-
-    // If there's already a waiting SW, activate it now
-    if (reg.waiting) {
-      reg.waiting.postMessage('skipWaiting');
-    }
-
-    // If a new SW is found during install, activate immediately when ready
-    reg.addEventListener('updatefound', () => {
-      const newWorker = reg.installing;
-      if (!newWorker) return;
-      newWorker.addEventListener('statechange', () => {
-        if (newWorker.state === 'installed') {
-          // New version installed - activate immediately
-          newWorker.postMessage('skipWaiting');
-        }
-      });
-    });
-  }).catch(()=>{});
-
-  // When SW takes control (after skipWaiting), reload the page automatically
-  let refreshing = false;
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!refreshing) {
-      refreshing = true;
-      window.location.reload();
-    }
-  });
-
-  // Also poll every 60s for new SW version in background
-  setInterval(() => {
-    navigator.serviceWorker.getRegistration().then(reg => {
-      if (reg) reg.update();
-    });
-  }, 60000);
+  // Registra SW - sem forçar reload (evita loop)
+  navigator.serviceWorker.register('./service-worker.js')
+    .then(reg => {
+      // Poll a cada 5min para verificar updates em background
+      setInterval(() => reg.update(), 300000);
+    }).catch(()=>{});
 }
+
 
 
 function installUpdate() {
